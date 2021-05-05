@@ -44,18 +44,18 @@ impl Stream for ScancodeStream {
             .try_get()
             .expect("not initialized");
         
-        if let Some(scancode) = queue.pop() {
+        if let Ok(scancode) = queue.pop() {
             return Poll::Ready(Some(scancode));
         }
 
         WAKER.register(&cx.waker());
 
         match queue.pop() {
-            Some(scancode) => {
+            Ok(scancode) => {
                 WAKER.take();
                 Poll::Ready(Some(scancode))
             }
-            None => Poll::Pending,
+            Err(crossbeam_queue::PopError) => Poll::Pending,
         }
     }
 }

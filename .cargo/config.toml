@@ -1,9 +1,11 @@
-[unstable]
-build-std = ["core", "compiler_builtins", "alloc"]
-
 [build]
-target = "./targets/x86_64-blog_os.json"
-
+# Target embutido (tier 2). Desde que o rust-std de x86_64-unknown-none passou a
+# ser distribuído pré-compilado, core/alloc/compiler_builtins vêm prontos e o
+# `-Z build-std` com target JSON custom deixou de ser necessário.
+target = "x86_64-unknown-none"
+# O target embutido gera PIE (ET_DYN) por padrão; o bootloader 0.9 carrega um ELF
+# estático em endereço fixo. Sem isto a imagem não boota.
+rustflags = ["-C", "relocation-model=static"]
 
 [target.'cfg(target_os = "none")']
 runner = "bootimage runner"

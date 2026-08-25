@@ -1,17 +1,22 @@
-use x86_64::{
-    PhysAddr, VirtAddr, 
-    structures::paging::{PageTable, PhysFrame, Size4KiB, FrameAllocator}
-};
 use x86_64::structures::paging::OffsetPageTable;
+use x86_64::{
+    structures::paging::{FrameAllocator, PageTable, PhysFrame, Size4KiB},
+    PhysAddr, VirtAddr,
+};
 
 use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
 
+/// # Safety
+///
+/// O chamador precisa garantir que toda a memória física está mapeada em
+/// `physical_memory_offset` e que esta função é chamada uma única vez — devolver
+/// duas `OffsetPageTable` para a mesma tabela seria aliasing mutável.
 pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
-    let level_4_table = active_level_4_table(physical_memory_offset);
-    OffsetPageTable::new(level_4_table, physical_memory_offset)
+    let level_4_table = unsafe { active_level_4_table(physical_memory_offset) };
+    unsafe { OffsetPageTable::new(level_4_table, physical_memory_offset) }
 }
 
-unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) 
+unsafe fn active_level_4_table(physical_memory_offset: VirtAddr)
     -> &'static mut PageTable
 {
     use x86_64::registers::control::Cr3;
@@ -22,13 +27,15 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr)
     let virt = physical_memory_offset + phys.as_u64();
     let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
 
-    &mut *page_table_ptr
+    unsafe { &mut *page_table_ptr }
 }
 
-/// Translate the given virtual address to the mapped physical address, or 
+/// Translate the given virtual address to the mapped physical address, or
 /// `None` of the address is not mapped
 ///
-/// This function is unsafe because the caller must grarantee that the 
+/// # Safety
+///
+/// This function is unsafe because the caller must grarantee that the
 /// complete physical memory is mapped to virtual memory at the passed
 /// `physical_memory_offset`;
 pub unsafe fn translate_addr(addr: VirtAddr, physical_memory_offset: VirtAddr) -> Option<PhysAddr>{
@@ -40,7 +47,7 @@ fn translate_addr_inner(addr: VirtAddr, physical_memory_offset: VirtAddr) -> Opt
     use x86_64::registers::control::Cr3;
 
     let (level_4_table_frame, _) = Cr3::read();
-    
+
     let table_indexes = [
         addr.p4_index(), addr.p3_index(), addr.p2_index(), addr.p1_index()
     ];
@@ -51,7 +58,7 @@ fn translate_addr_inner(addr: VirtAddr, physical_memory_offset: VirtAddr) -> Opt
         let virt = physical_memory_offset + frame.start_address().as_u64();
         let table_ptr: *const PageTable = virt.as_ptr();
         let table = unsafe {&*table_ptr};
-        
+
         let entry = &table[index];
         frame = match entry.frame() {
             Ok(frame) => frame,
@@ -78,6 +85,10 @@ pub struct BootInfoFrameAllocator {
 
 
 impl BootInfoFrameAllocator {
+    /// # Safety
+    ///
+    /// O chamador precisa garantir que o `memory_map` recebido é válido e que as
+    /// regiões marcadas como `Usable` estão de fato livres.
     pub unsafe fn init(memory_map: &'static MemoryMap) -> Self {
         BootInfoFrameAllocator {
             memory_map,

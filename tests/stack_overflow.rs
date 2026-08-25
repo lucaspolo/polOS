@@ -5,7 +5,7 @@
 use core::panic::PanicInfo;
 use pol_os::serial_print;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     serial_print!("stack_overflow::stack_overflow...\t");
 
@@ -20,7 +20,11 @@ pub extern "C" fn _start() -> ! {
 #[allow(unconditional_recursion)]
 fn stack_overflow() {
     stack_overflow();
-    volatile::Volatile::new(0).read();
+    // Leitura volátil de um valor descartado: impede o compilador de transformar a
+    // recursão acima em laço (tail call) e nunca estourar a pilha. Antes isto era
+    // `volatile::Volatile::new(0).read()`, tipo que o volatile 0.5+ removeu.
+    let probe = 0u8;
+    unsafe { core::ptr::read_volatile(&raw const probe) };
 }
 
 #[panic_handler]
@@ -52,7 +56,7 @@ use pol_os::{exit_qemu, serial_println, QemuExitCode};
 use x86_64::structures::idt::InterruptStackFrame;
 
 extern "x86-interrupt" fn test_double_fault_handler(
-    _stack_frame: &mut InterruptStackFrame,
+    _stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) -> ! {
     serial_println!("[ok]");

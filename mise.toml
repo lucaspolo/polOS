@@ -1,0 +1,23 @@
+# Fonte única da versão de toolchain deste projeto.
+#
+# ⚠️ Não recrie `rust-toolchain.toml` nem `.tool-versions` aqui: o backend rust do
+# mise exporta RUSTUP_TOOLCHAIN, que tem precedência sobre o rust-toolchain.toml.
+# Com os dois arquivos, o do rustup é silenciosamente ignorado e as versões
+# divergem sem ninguém perceber — foi exatamente o que aconteceu neste repo, que
+# tinha `rust-toolchain` = nightly e `.tool-versions` = stable ao mesmo tempo.
+#
+# O nightly é obrigatório, não preferência: `custom_test_frameworks` (o runner de
+# teste do kernel) e `abi_x86_interrupt` (os handlers de exceção) continuam
+# instáveis. A data está fixada para o build ser reproduzível; para subir, troque
+# a data, rode `mise install` e `cargo test`.
+#
+# Componentes:
+#   rust-src   — o bootimage compila o bootloader com -Zbuild-std
+#   llvm-tools — o bootimage usa o llvm-objcopy para extrair o binário do kernel
+#
+# ⚠️ `targets` não é opcional: sem o rust-std de x86_64-unknown-none o kernel só
+# compila enquanto houver artefato em cache, e o passo de doc-test quebra com
+# "can't find crate for core".
+[tools]
+rust = { version = "nightly-2026-08-25", components = "rust-src,llvm-tools", targets = "x86_64-unknown-none" }
+"cargo:bootimage" = "0.10.5"

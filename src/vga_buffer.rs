@@ -135,19 +135,18 @@ impl fmt::Write for Writer {
     }
 }
 
-use lazy_static::lazy_static;
-use spin::Mutex;
+use spin::{LazyLock, Mutex};
 
-lazy_static! {
-    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
+pub static WRITER: LazyLock<Mutex<Writer>> = LazyLock::new(|| {
+    Mutex::new(Writer {
         column_position: 0,
         color_code: ColorCode::new(Color::Yellow, Color::Black),
         buffer: unsafe {
             let ptr = core::ptr::with_exposed_provenance_mut::<Buffer>(VGA_BUFFER_ADDR);
             VolatileRef::new(NonNull::new(ptr).unwrap())
         },
-    });
-}
+    })
+});
 
 // Macros
 

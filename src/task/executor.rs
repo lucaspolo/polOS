@@ -35,7 +35,8 @@ impl Executor {
             waker_cache,
         } = self;
 
-        while let Ok(task_id) = task_queue.pop() {
+        // ArrayQueue::pop passou a devolver Option<T> no crossbeam-queue 0.3.
+        while let Some(task_id) = task_queue.pop() {
             let task = match tasks.get_mut(&task_id) {
                 Some(task) => task,
                 None => continue,
@@ -64,12 +65,12 @@ impl Executor {
     }
 
     fn sleep_if_idle(&self) {
-        use x86_64::instructions::interrupts::{self, enable_interrupts_and_hlt};
+        use x86_64::instructions::interrupts::{self, enable_and_hlt};
 
         interrupts::disable();
 
         if self.task_queue.is_empty() {
-            enable_interrupts_and_hlt();
+            enable_and_hlt();
         } else {
             interrupts::enable();
         }

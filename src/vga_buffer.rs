@@ -39,21 +39,39 @@ struct ScreenChar {
 
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
+const VGA_BUFFER_ADDR: usize = 0xb8000;
 
-use volatile::Volatile;
+use core::ptr::NonNull;
+use volatile::{VolatilePtr, VolatileRef};
 
 #[repr(transparent)]
 struct Buffer {
-    chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
+    chars: [[ScreenChar; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
 
 pub struct Writer {
     column_position: usize,
     color_code: ColorCode,
-    buffer: &'static mut Buffer,
+    buffer: VolatileRef<'static, Buffer>,
 }
 
 impl Writer {
+    /// Ponteiro volátil para uma célula da tela.
+    ///
+    /// A partir do `volatile` 0.5 não existe mais um `Volatile<T>` que possa morar
+    /// dentro do array: o acesso volátil vive no ponteiro, e a projeção do campo é
+    /// feita com `map`. O `&raw mut` é essencial — materializar uma `&mut` para
+    /// memória mapeada em dispositivo autorizaria o compilador a lê-la fora de uma
+    /// operação volátil.
+    fn cell(&mut self, row: usize, col: usize) -> VolatilePtr<'_, ScreenChar> {
+        assert!(row < BUFFER_HEIGHT && col < BUFFER_WIDTH);
+        unsafe {
+            self.buffer
+                .as_mut_ptr()
+                .map(|buffer| NonNull::new_unchecked(&raw mut (*buffer.as_ptr()).chars[row][col]))
+        }
+    }
+
     pub fn write_byte(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),
@@ -66,7 +84,7 @@ impl Writer {
                 let col = self.column_position;
 
                 let color_code = self.color_code;
-                self.buffer.chars[row][col].write(ScreenChar {
+                self.cell(row, col).write(ScreenChar {
                     ascii_character: byte,
                     color_code,
                 });
@@ -78,8 +96,8 @@ impl Writer {
     fn new_line(&mut self) {
         for row in 1..BUFFER_HEIGHT {
             for col in 0..BUFFER_WIDTH {
-                let character = self.buffer.chars[row][col].read();
-                self.buffer.chars[row - 1][col].write(character);
+                let character = self.cell(row, col).read();
+                self.cell(row - 1, col).write(character);
             }
         }
 
@@ -94,7 +112,7 @@ impl Writer {
         };
 
         for col in 0..BUFFER_WIDTH {
-            self.buffer.chars[row][col].write(blank)
+            self.cell(row, col).write(blank)
         }
     }
 
@@ -124,7 +142,10 @@ lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
         color_code: ColorCode::new(Color::Yellow, Color::Black),
-        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+        buffer: unsafe {
+            let ptr = core::ptr::with_exposed_provenance_mut::<Buffer>(VGA_BUFFER_ADDR);
+            VolatileRef::new(NonNull::new(ptr).unwrap())
+        },
     });
 }
 
@@ -173,7 +194,7 @@ fn test_println_output() {
         let mut writer = WRITER.lock();
         writeln!(writer, "\n{}", s).expect("writeln failed");
         for (i, c) in s.chars().enumerate() {
-            let screen_char = writer.buffer.chars[BUFFER_HEIGHT - 2][i].read();
+            let screen_char = writer.cell(BUFFER_HEIGHT - 2, i).read();
             assert_eq!(char::from(screen_char.ascii_character), c);
         }
     });

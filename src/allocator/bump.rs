@@ -19,6 +19,10 @@ impl BumpAllocator {
         }
     }
 
+    /// # Safety
+    ///
+    /// O intervalo `[heap_start, heap_start + heap_size)` precisa estar mapeado e
+    /// não pode ser usado por mais ninguém. Só pode ser chamada uma vez.
     pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
         self.heap_start = heap_start;
         self.heap_end = heap_start + heap_size;

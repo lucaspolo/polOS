@@ -4,7 +4,7 @@ use conquer_once::spin::OnceCell;
 use crossbeam_queue::ArrayQueue;
 use futures_util::task::AtomicWaker;
 use futures_util::stream::{Stream, StreamExt};
-use pc_keyboard::{HandleControl, Keyboard, ScancodeSet1, layouts, DecodedKey};
+use pc_keyboard::{DecodedKey, HandleControl, PS2Keyboard, ScancodeSet1, layouts};
 
 use crate::print;
 
@@ -12,7 +12,7 @@ static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 
 pub(crate) fn add_scancode(scancode: u8) {
     if let Ok(queue) = SCANCODE_QUEUE.try_get() {
-        if let Err(_) = queue.push(scancode) {
+        if queue.push(scancode).is_err() {
             print!("WARNING: scancode queue full; dropping keyboard input\n");
         } else {
             WAKER.wake();
@@ -44,25 +44,27 @@ impl Stream for ScancodeStream {
             .try_get()
             .expect("not initialized");
         
-        if let Ok(scancode) = queue.pop() {
+        if let Some(scancode) = queue.pop() {
             return Poll::Ready(Some(scancode));
         }
 
-        WAKER.register(&cx.waker());
+        WAKER.register(cx.waker());
 
+        // ArrayQueue::pop devolve Option<T> desde o crossbeam-queue 0.3.
         match queue.pop() {
-            Ok(scancode) => {
+            Some(scancode) => {
                 WAKER.take();
                 Poll::Ready(Some(scancode))
             }
-            Err(crossbeam_queue::PopError) => Poll::Pending,
+            None => Poll::Pending,
         }
     }
 }
 
 pub async fn print_keypresses() {
     let mut scancodes = ScancodeStream::new();
-    let mut keyboard = Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore);
+    // No pc-keyboard 0.9 o tipo virou PS2Keyboard e o scancode set vem primeiro.
+    let mut keyboard = PS2Keyboard::new(ScancodeSet1::new(), layouts::Us104Key, HandleControl::Ignore);
 
     while let Some(scancode) = scancodes.next().await {
         if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {

@@ -3,9 +3,8 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(pol_os::test_runner)]
 #![reexport_test_harness_main = "test_main"]
-#![feature(abi_x86_interrupt)]
 
-use core::{panic::PanicInfo};
+use core::panic::PanicInfo;
 use pol_os::{memory::BootInfoFrameAllocator, println, task::{Task, executor::Executor, keyboard}};
 use bootloader::{BootInfo, entry_point};
 
@@ -15,7 +14,7 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use pol_os::allocator;
     use pol_os::memory;
-    use x86_64::{VirtAddr};
+    use x86_64::VirtAddr;
 
     println!("Hello World{}", "!");
     pol_os::init();

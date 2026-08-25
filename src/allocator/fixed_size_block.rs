@@ -14,15 +14,21 @@ pub struct FixedSizeBlockAllocator {
 
 impl FixedSizeBlockAllocator {
     pub const fn new () -> Self {
-        const EMPTY: Option<&'static mut ListNode> = None;
         FixedSizeBlockAllocator {
-            list_heads: [EMPTY; BLOCK_SIZES.len()],
+            // `[const { None }; N]` substitui o truque do `const EMPTY` — o tipo do
+            // elemento não é `Copy`, então o array precisa ser construído em contexto
+            // const.
+            list_heads: [const { None }; BLOCK_SIZES.len()],
             fallback_allocator: linked_list_allocator::Heap::empty(),
         }
     }
 
-    pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
-        self.fallback_allocator.init(heap_start, heap_size);
+    /// # Safety
+    ///
+    /// O intervalo `[heap_start, heap_start + heap_size)` precisa estar mapeado e
+    /// não pode ser usado por mais ninguém. Só pode ser chamada uma vez.
+    pub unsafe fn init(&mut self, heap_start: *mut u8, heap_size: usize) {
+        unsafe { self.fallback_allocator.init(heap_start, heap_size) };
     }
 
     fn fallback_alloc(&mut self, layout: Layout) -> *mut u8 {
@@ -74,12 +80,14 @@ unsafe impl GlobalAlloc for Locked<FixedSizeBlockAllocator> {
                 assert!(mem::size_of::<ListNode>() <= BLOCK_SIZES[index]);
                 assert!(mem::align_of::<ListNode>() <= BLOCK_SIZES[index]);
                 let new_node_ptr = ptr as *mut ListNode;
-                new_node_ptr.write(new_node);
-                allocator.list_heads[index] = Some(&mut *new_node_ptr);
+                unsafe {
+                    new_node_ptr.write(new_node);
+                    allocator.list_heads[index] = Some(&mut *new_node_ptr);
+                }
             }
             None => {
                 let ptr = NonNull::new(ptr).unwrap();
-                allocator.fallback_allocator.deallocate(ptr, layout)
+                unsafe { allocator.fallback_allocator.deallocate(ptr, layout) }
             }
         }
     }
